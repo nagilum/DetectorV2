@@ -29,6 +29,10 @@ namespace DetectorWorker.Database.Tables
         [MaxLength(64)]
         public string Identifier { get; set; }
 
+        [Column] // Can be null
+        [MaxLength(64)]
+        public string Status { get; set; }
+
         [Column]
         [MaxLength(64)]
         public string Name { get; set; }

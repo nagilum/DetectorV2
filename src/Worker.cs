@@ -286,6 +286,10 @@ namespace DetectorWorker
             // Update resource and set when the resource should be scanned next.
             resource.NextScan = DateTimeOffset.Now.AddSeconds(nextScanSeconds);
 
+            // Set status.
+            resource.Status = result.GetStatus(lastResult);
+
+            // Save.
             try
             {
                 await db.SaveChangesAsync(cancellationToken);
