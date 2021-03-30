@@ -2,7 +2,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace DetectorV2.Database.Tables
+namespace DetectorWorker.Database.Tables
 {
     [Table("Alerts")]
     public class Alert

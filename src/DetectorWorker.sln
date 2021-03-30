@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.31112.23
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DetectorV2", "DetectorV2.csproj", "{677A8287-1C33-42BC-86CA-DBF791B0840D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DetectorWorker", "DetectorWorker.csproj", "{677A8287-1C33-42BC-86CA-DBF791B0840D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

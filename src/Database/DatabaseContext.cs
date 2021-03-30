@@ -1,8 +1,8 @@
-﻿using DetectorV2.Core;
-using DetectorV2.Database.Tables;
+﻿using DetectorWorker.Core;
+using DetectorWorker.Database.Tables;
 using Microsoft.EntityFrameworkCore;
 
-namespace DetectorV2.Database
+namespace DetectorWorker.Database
 {
     public class DatabaseContext : DbContext
     {

@@ -1,8 +1,8 @@
-using DetectorV2.Core;
+using DetectorWorker.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace DetectorV2
+namespace DetectorWorker
 {
     public class Program
     {

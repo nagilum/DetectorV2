@@ -1,5 +1,9 @@
-using DetectorV2.Database;
-using DetectorV2.Database.Tables;
+using DetectorWorker.Core;
+using DetectorWorker.Database;
+using DetectorWorker.Database.Tables;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,12 +15,8 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using DetectorV2.Core;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
-namespace DetectorV2
+namespace DetectorWorker
 {
     public class Worker : BackgroundService
     {
