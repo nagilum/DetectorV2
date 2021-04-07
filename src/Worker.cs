@@ -283,6 +283,9 @@ namespace DetectorWorker
                 Logger.LogCritical(ex, ex.Message);
             }
 
+            // Set last scanned as now.
+            resource.LastScan = DateTimeOffset.Now;
+
             // Update resource and set when the resource should be scanned next.
             resource.NextScan = DateTimeOffset.Now.AddSeconds(nextScanSeconds);
 

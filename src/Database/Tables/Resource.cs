@@ -23,6 +23,9 @@ namespace DetectorWorker.Database.Tables
         public DateTimeOffset? Deleted { get; set; }
 
         [Column]
+        public DateTimeOffset? LastScan { get; set; }
+
+        [Column]
         public DateTimeOffset? NextScan { get; set; }
 
         [Column]
