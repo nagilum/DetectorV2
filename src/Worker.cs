@@ -106,6 +106,9 @@ namespace DetectorWorker
                 // Log locally.
                 Logger.LogCritical(ex, ex.Message);
 
+                // Log to db.
+                await Log.LogCritical(ex.Message);
+
                 // Exit stage.
                 return;
             }
@@ -127,6 +130,9 @@ namespace DetectorWorker
             {
                 // Log locally.
                 Logger.LogCritical(ex, ex.Message);
+
+                // Log to db.
+                await Log.LogCritical(ex.Message, refType: "resource", refId: resource.Id);
 
                 // Set last result as null, for ease.
                 lastResult = null;
@@ -368,6 +374,11 @@ namespace DetectorWorker
                     resource.Url,
                     $"Got invalid HTTP status code: {result.StatusCode.Value}",
                     cancellationToken);
+
+                await Log.LogCritical(
+                    $"Got invalid HTTP status code: {result.StatusCode.Value}",
+                    refType: "resource",
+                    refId: resource.Id);
             }
 
             // Success HTTP status code, but different than last time?
@@ -388,6 +399,11 @@ namespace DetectorWorker
                         resource.Url,
                         "HTTP status code is now valid!",
                         cancellationToken);
+
+                    await Log.LogInformation(
+                        "HTTP status code is now valid!",
+                        refType: "resource",
+                        refId: resource.Id);
                 }
             }
 
@@ -403,6 +419,11 @@ namespace DetectorWorker
                     resource.Url,
                     $"SSL cert error: {result.SslErrorCode} - {result.SslErrorMessage}",
                     cancellationToken);
+
+                await Log.LogCritical(
+                    $"SSL cert error: {result.SslErrorCode} - {result.SslErrorMessage}",
+                    refType: "resource",
+                    refId: resource.Id);
             }
 
             // No SSL cert errors, but different than last time?
@@ -418,6 +439,11 @@ namespace DetectorWorker
                     resource.Url,
                     "The SSL cert error has been resolved!",
                     cancellationToken);
+
+                await Log.LogInformation(
+                    "The SSL cert error has been resolved!",
+                    refType: "resource",
+                    refId: resource.Id);
             }
 
             // Different connecting IP?
@@ -433,6 +459,11 @@ namespace DetectorWorker
                     resource.Url,
                     $"Different connecting IP. Used to be {lastResult.ConnectingIp} but now it's {result.ConnectingIp}. This might not be erroneous, but should be verified.",
                     cancellationToken);
+
+                await Log.LogWarning(
+                    $"Different connecting IP. Used to be {lastResult.ConnectingIp} but now it's {result.ConnectingIp}. This might not be erroneous, but should be verified.",
+                    refType: "resource",
+                    refId: resource.Id);
             }
 
             // Exception message?
@@ -447,6 +478,11 @@ namespace DetectorWorker
                     resource.Url,
                     $"Unhandled error while checking resource: {result.ExceptionMessage}",
                     cancellationToken);
+
+                await Log.LogCritical(
+                    $"Unhandled error while checking resource: {result.ExceptionMessage}",
+                    refType: "resource",
+                    refId: resource.Id);
             }
 
             // Exception message dissapeared?
@@ -462,6 +498,11 @@ namespace DetectorWorker
                     resource.Url,
                     "The previous error has been resolved!",
                     cancellationToken);
+
+                await Log.LogInformation(
+                    "The previous error has been resolved!",
+                    refType: "resource",
+                    refId: resource.Id);
             }
         }
 
@@ -491,6 +532,9 @@ namespace DetectorWorker
                     Message = message
                 };
 
+                // Log locally.
+                await this.LogAlert(resource, entry);
+
                 // Check if the same alert has been triggered the last 24 hours, if so, skip it!
                 var prevEntry = await db.Alerts
                     .FirstOrDefaultAsync(n => n.ResourceId == entry.ResourceId &&
@@ -514,9 +558,6 @@ namespace DetectorWorker
                 await db.Alerts.AddAsync(entry, cancellationToken);
                 await db.SaveChangesAsync(cancellationToken);
 
-                // Log locally.
-                this.LogAlert(resource, entry);
-
                 // Post the alert to Slack.
                 await this.PostToSlack(resource, entry, cancellationToken);
             }
@@ -524,6 +565,12 @@ namespace DetectorWorker
             {
                 // Log locally.
                 Logger.LogCritical(ex, ex.Message);
+
+                // Log to db.
+                await Log.LogCritical(
+                    ex.Message,
+                    refType: "resource",
+                    refId: resource.Id);
             }
         }
 
@@ -532,7 +579,7 @@ namespace DetectorWorker
         /// </summary>
         /// <param name="resource">Resource.</param>
         /// <param name="alert">Alert to log.</param>
-        private void LogAlert(Resource resource, Alert alert)
+        private async Task LogAlert(Resource resource, Alert alert)
         {
             var message = $"[{resource.Identifier}] [ALERT] [{alert.Url}] {alert.Message}";
 
@@ -540,18 +587,22 @@ namespace DetectorWorker
             {
                 case "positive":
                     Logger.LogInformation(message);
+                    await Log.LogInformation(message, refType: "resource", refId: resource.Id);
                     break;
 
                 case "negative":
                     Logger.LogError(message);
+                    await Log.LogCritical(message, refType: "resource", refId: resource.Id);
                     break;
 
                 case "warning":
                     Logger.LogWarning(message);
+                    await Log.LogWarning(message, refType: "resource", refId: resource.Id);
                     break;
 
                 case "neutral":
                     Logger.LogInformation(message);
+                    await Log.LogInformation(message, refType: "resource", refId: resource.Id);
                     break;
             }
         }
@@ -565,46 +616,45 @@ namespace DetectorWorker
         /// <returns></returns>
         private async Task PostToSlack(Resource resource, Alert alert, CancellationToken cancellationToken)
         {
-            var url = Config.Get("slack", "url");
-
-            if (url == null)
-            {
-                Logger.LogWarning("No Slack url in config under 'slack.url'!");
-                return;
-            }
-
-            var color = string.Empty;
-            var title = string.Empty;
-
-            switch (alert.Type)
-            {
-                case "positive":
-                    color = "#009700";
-                    title = "Ok";
-
-                    break;
-
-                case "negative":
-                    color = "#970000";
-                    title = "Error";
-
-                    break;
-
-                case "warning":
-                    color = "#979700";
-                    title = "Warning";
-
-                    break;
-
-                case "nautral":
-                    color = "#979797";
-                    title = "Info";
-
-                    break;
-            }
-
             try
             {
+                var url = Config.Get("slack", "url");
+
+                if (url == null)
+                {
+                    throw new Exception("No Slack url in config under 'slack.url'!");
+                }
+
+                var color = string.Empty;
+                var title = string.Empty;
+
+                switch (alert.Type)
+                {
+                    case "positive":
+                        color = "#009700";
+                        title = "Ok";
+
+                        break;
+
+                    case "negative":
+                        color = "#970000";
+                        title = "Error";
+
+                        break;
+
+                    case "warning":
+                        color = "#979700";
+                        title = "Warning";
+
+                        break;
+
+                    case "nautral":
+                        color = "#979797";
+                        title = "Info";
+
+                        break;
+                }
+
                 if (!(WebRequest.Create(url) is HttpWebRequest req))
                 {
                     throw new Exception($"Unable to create HttpWebRequest from {url}");
@@ -646,7 +696,14 @@ namespace DetectorWorker
             }
             catch (Exception ex)
             {
+                // Log locally.
                 Logger.LogCritical(ex, ex.Message);
+
+                // Log to db.
+                await Log.LogCritical(
+                    ex.Message,
+                    refType: "resource",
+                    refId: resource.Id);
             }
         }
 
