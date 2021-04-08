@@ -19,6 +19,8 @@ namespace DetectorWorker.Database
 
         public DbSet<Alert> Alerts { get; set; }
 
+        public DbSet<Issue> Issues { get; set; }
+
         public DbSet<Log> Logs { get; set; }
 
         public DbSet<Resource> Resources { get; set; }

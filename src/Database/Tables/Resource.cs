@@ -44,6 +44,10 @@ namespace DetectorWorker.Database.Tables
         [MaxLength(1024)]
         public string Url { get; set; }
 
+        [Column]
+        [MaxLength(128)]
+        public string ConnectingIp { get; set; }
+
         #endregion
 
         #region Overrides
