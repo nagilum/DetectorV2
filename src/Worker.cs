@@ -533,7 +533,7 @@ namespace DetectorWorker
                 };
 
                 // Log locally.
-                await this.LogAlert(resource, entry);
+                this.LogAlert(resource, entry);
 
                 // Check if the same alert has been triggered the last 24 hours, if so, skip it!
                 var prevEntry = await db.Alerts
@@ -579,7 +579,7 @@ namespace DetectorWorker
         /// </summary>
         /// <param name="resource">Resource.</param>
         /// <param name="alert">Alert to log.</param>
-        private async Task LogAlert(Resource resource, Alert alert)
+        private void LogAlert(Resource resource, Alert alert)
         {
             var message = $"[{resource.Identifier}] [ALERT] [{alert.Url}] {alert.Message}";
 
@@ -587,22 +587,18 @@ namespace DetectorWorker
             {
                 case "positive":
                     Logger.LogInformation(message);
-                    await Log.LogInformation(message, refType: "resource", refId: resource.Id);
                     break;
 
                 case "negative":
                     Logger.LogError(message);
-                    await Log.LogCritical(message, refType: "resource", refId: resource.Id);
                     break;
 
                 case "warning":
                     Logger.LogWarning(message);
-                    await Log.LogWarning(message, refType: "resource", refId: resource.Id);
                     break;
 
                 case "neutral":
                     Logger.LogInformation(message);
-                    await Log.LogInformation(message, refType: "resource", refId: resource.Id);
                     break;
             }
         }
