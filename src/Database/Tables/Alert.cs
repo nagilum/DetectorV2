@@ -22,8 +22,8 @@ namespace DetectorWorker.Database.Tables
         [Column]
         public long ResourceId { get; set; }
 
-        [Column] // Can be null
-        public long? ScanResultId { get; set; }
+        [Column]
+        public long IssueId { get; set; }
 
         [Column]
         [MaxLength(16)]
@@ -36,6 +36,9 @@ namespace DetectorWorker.Database.Tables
         [Column]
         [MaxLength(1024)]
         public string Message { get; set; }
+
+        [Column]
+        public DateTimeOffset? PostedToSlack { get; set; }
 
         #endregion
     }
