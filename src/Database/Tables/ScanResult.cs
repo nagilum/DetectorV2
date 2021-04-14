@@ -4,8 +4,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace DetectorWorker.Database.Tables
 {
-    [Table("Issues")]
-    public class Issue
+    [Table("ScanResults")]
+    public class ScanResult
     {
         #region ORM
 
@@ -17,12 +17,6 @@ namespace DetectorWorker.Database.Tables
         public DateTimeOffset Created { get; set; }
 
         [Column]
-        public DateTimeOffset Updated { get; set; }
-
-        [Column]
-        public DateTimeOffset? Resolved { get; set; }
-
-        [Column]
         public long ResourceId { get; set; }
 
         [Column]
@@ -30,10 +24,18 @@ namespace DetectorWorker.Database.Tables
         public string Url { get; set; }
 
         [Column]
-        public string IssueType { get; set; }
+        [MaxLength(32)]
+        public string SslErrorCode { get; set; }
 
         [Column]
-        public string Message { get; set; }
+        [MaxLength(128)]
+        public string SslErrorMessage { get; set; }
+
+        [Column]
+        public int? HttpStatusCode { get; set; }
+
+        [Column]
+        public string ConnectingIp { get; set; }
 
         #endregion
     }

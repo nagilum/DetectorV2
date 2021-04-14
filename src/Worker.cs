@@ -96,7 +96,6 @@ namespace DetectorWorker
             await using var db = new DatabaseContext();
 
             Resource resource;
-            List<Issue> issues;
 
             try
             {
@@ -109,11 +108,6 @@ namespace DetectorWorker
                 {
                     throw new Exception($"Resource not found: {id}");
                 }
-
-                issues = await db.Issues
-                    .Where(n => !n.Resolved.HasValue &&
-                                n.ResourceId == resource.Id)
-                    .ToListAsync(cancellationToken);
             }
             catch (Exception ex)
             {
@@ -127,14 +121,16 @@ namespace DetectorWorker
                 return;
             }
 
-            // Prepare new issue.
-            var newIssue = new Issue
+            // Prepare new scan result.
+            var scanResult = new ScanResult
             {
                 Created = DateTimeOffset.Now,
-                Updated = DateTimeOffset.Now,
                 ResourceId = resource.Id,
                 Url = resource.Url
             };
+
+            string issueType;
+            string issueMessage;
 
             // Log locally.
             this.Logger.LogInformation($"[{resource.Identifier}] [SCAN] {resource.Url}");
@@ -143,26 +139,26 @@ namespace DetectorWorker
             try
             {
                 // Get connecting IP.
-                var connectingIp = await ResolveConnectingIp(resource.Url);
+                scanResult.ConnectingIp = await ResolveConnectingIp(resource.Url);
 
-                if (connectingIp == null)
+                if (scanResult.ConnectingIp == null)
                 {
-                    throw new Exception($"Unable to resolve IP for {resource.Url}");
+                    throw new UnableToResolveIpException($"Unable to resolve IP for {resource.Url}");
                 }
 
                 // Does the resource have the connecting IP saved?
                 if (resource.ConnectingIp == null)
                 {
-                    resource.ConnectingIp = connectingIp;
+                    resource.ConnectingIp = scanResult.ConnectingIp;
                     await db.SaveChangesAsync(cancellationToken);
                 }
 
                 // Verify connecting IP.
-                if (resource.ConnectingIp != connectingIp)
+                if (resource.ConnectingIp != scanResult.ConnectingIp)
                 {
                     throw new InvalidConnectingIpException(
-                        $"Resource and scan IP mismatch. Resource says {resource.ConnectingIp}. Scan says {connectingIp}",
-                        connectingIp);
+                        $"Resource and scan IP mismatch. Resource says {resource.ConnectingIp}. Scan says {scanResult.ConnectingIp}",
+                        scanResult.ConnectingIp);
                 }
 
                 // Check SSL cert.
@@ -172,15 +168,24 @@ namespace DetectorWorker
                 AttemptGetRequest(resource.Url);
 
                 // If we arrive here, all issues must be resolved!
-                foreach (var issue in issues)
+                var unresolvedIssues = await db.Issues
+                    .Where(n => n.ResourceId == resource.Id &&
+                                !n.Resolved.HasValue)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var issue in unresolvedIssues)
                 {
+                    // Set it as resolved.
+                    issue.Updated = DateTimeOffset.Now;
                     issue.Resolved = DateTimeOffset.Now;
+
                     await db.SaveChangesAsync(cancellationToken);
 
-                    // Create an alert for each issue that has been resolved.
+                    // Create an alert.
                     await CreateAlert(resource, issue, cancellationToken);
                 }
 
+                // Log to db.
                 await Log.LogInformation("Everything is ok.", refType: "resource", refId: resource.Id);
 
                 // Update resource.
@@ -194,98 +199,51 @@ namespace DetectorWorker
             }
             catch (SslException ex)
             {
-                var message = $"SSL Error: {ex.Code} - {ex.Message}";
+                // Set result.
+                scanResult.SslErrorCode = ex.Code;
+                scanResult.SslErrorMessage = ex.Message;
 
-                // Log locally.
-                this.Logger.LogCritical($"[{resource.Identifier}] {message}");
-
-                // Log to db.
-                await Log.LogCritical(message, refType: "resource", refId: resource.Id);
-
-                // Update existing issue or prepare new.
-                var existingIssue = issues
-                    .FirstOrDefault(n => n.SslErrorCode == ex.Code);
-
-                if (existingIssue != null)
-                {
-                    existingIssue.Updated = DateTimeOffset.Now;
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-                else
-                {
-                    newIssue.Message = message;
-                    newIssue.SslErrorMessage = ex.Message;
-                    newIssue.SslErrorCode = ex.Code;
-                }
+                // Create issue message.
+                issueType = "ssl_error";
+                issueMessage = $"SSL Error: {ex.Code} - {ex.Message}";
             }
             catch (InvalidHttpStatusCodeException ex)
             {
-                // Log locally.
-                this.Logger.LogCritical($"[{resource.Identifier}] {ex.Message}");
+                // Set result.
+                scanResult.HttpStatusCode = ex.HttpStatusCode;
 
-                // Log to db.
-                await Log.LogCritical(ex.Message, refType: "resource", refId: resource.Id);
-
-                // Update existing issue or prepare new.
-                var existingIssue = issues
-                    .FirstOrDefault(n => n.HttpStatusCode == ex.HttpStatusCode);
-
-                if (existingIssue != null)
-                {
-                    existingIssue.Updated = DateTimeOffset.Now;
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-                else
-                {
-                    newIssue.Message = ex.Message;
-                    newIssue.HttpStatusCode = ex.HttpStatusCode;
-                }
+                // Create issue message.
+                issueType = "invalid_http_status_code";
+                issueMessage = ex.Message;
             }
             catch (InvalidConnectingIpException ex)
             {
-                // Log locally.
-                this.Logger.LogCritical($"[{resource.Identifier}] {ex.Message}");
-
-                // Log to db.
-                await Log.LogCritical(ex.Message, refType: "resource", refId: resource.Id);
-
-                // Update existing issue or prepare new.
-                var existingIssue = issues
-                    .FirstOrDefault(n => n.Message == ex.Message &&
-                                         n.ConnectingIp == ex.ConnectingIp);
-
-                if (existingIssue != null)
-                {
-                    existingIssue.Updated = DateTimeOffset.Now;
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-                else
-                {
-                    newIssue.Message = ex.Message;
-                    newIssue.ConnectingIp = ex.ConnectingIp;
-                }
+                // Create issue message.
+                issueType = "invalid_connecting_ip";
+                issueMessage = ex.Message;
+            }
+            catch (UnableToResolveIpException ex)
+            {
+                // Create issue message.
+                issueType = "unable_to_resolve_ip";
+                issueMessage = ex.Message;
             }
             catch (Exception ex)
             {
-                // Log locally.
-                this.Logger.LogCritical($"[{resource.Identifier}] {ex.Message}");
+                // Create issue message.
+                issueType = "unhandled_exception";
+                issueMessage = ex.Message;
+            }
 
-                // Log to db.
+            // Save scan result.
+            try
+            {
+                await db.ScanResults.AddAsync(scanResult, cancellationToken);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
                 await Log.LogCritical(ex.Message, refType: "resource", refId: resource.Id);
-
-                // Update existing issue or prepare new.
-                var existingIssue = issues
-                    .FirstOrDefault(n => n.Message == ex.Message);
-
-                if (existingIssue != null)
-                {
-                    existingIssue.Updated = DateTimeOffset.Now;
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-                else
-                {
-                    newIssue.Message = ex.Message;
-                }
             }
 
             // Update resource.
@@ -294,17 +252,70 @@ namespace DetectorWorker
             resource.Status = "Error";
 
             await db.SaveChangesAsync(cancellationToken);
-
-            if (newIssue.Message == null)
+            
+            // Did we run into an issue?
+            if (issueType == null)
             {
                 return;
             }
 
-            await db.Issues.AddAsync(newIssue, cancellationToken);
-            await db.SaveChangesAsync(cancellationToken);
+            // Log locally.
+            this.Logger.LogCritical($"[{resource.Identifier}] {issueMessage}");
 
-            // Create an alert for new new issue.
-            await this.CreateAlert(resource, newIssue, cancellationToken);
+            // Log to db.
+            await Log.LogCritical(issueMessage, refType: "resource", refId: resource.Id);
+
+            // Do we already have an unresolved issue about this?
+            var createNewIssue = true;
+
+            try
+            {
+                var issue = await db.Issues
+                    .FirstOrDefaultAsync(n => n.ResourceId == resource.Id &&
+                                              !n.Resolved.HasValue &&
+                                              n.IssueType == issueType,
+                        cancellationToken);
+
+                if (issue != null)
+                {
+                    createNewIssue = false;
+                    issue.Updated = DateTimeOffset.Now;
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                await Log.LogCritical(ex.Message, refType: "resource", refId: resource.Id);
+            }
+
+            if (!createNewIssue)
+            {
+                return;
+            }
+
+            // Create a new issue.
+            try
+            {
+                var issue = new Issue
+                {
+                    Created = DateTimeOffset.Now,
+                    Updated = DateTimeOffset.Now,
+                    ResourceId = resource.Id,
+                    Url = resource.Url,
+                    IssueType = issueType,
+                    Message = issueMessage
+                };
+
+                await db.Issues.AddAsync(issue, cancellationToken);
+                await db.SaveChangesAsync(cancellationToken);
+
+                // Create alert.
+                await CreateAlert(resource, issue, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                await Log.LogCritical(ex.Message, refType: "resource", refId: resource.Id);
+            }
         }
 
         /// <summary>
@@ -347,9 +358,9 @@ namespace DetectorWorker
                     tcpClient.GetStream(),
                     false,
                     delegate (
-                        object _,
-                        X509Certificate _,
-                        X509Chain _,
+                        object obj,
+                        X509Certificate cert,
+                        X509Chain chain,
                         SslPolicyErrors errors)
                     {
                         sslPolicyErrors = errors;
@@ -481,6 +492,8 @@ namespace DetectorWorker
 
                 alert.PostedToSlack = DateTimeOffset.Now;
                 await db.SaveChangesAsync(cancellationToken);
+
+                // TODO: Send as e-mail.
             }
             catch (Exception ex)
             {

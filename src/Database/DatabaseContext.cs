@@ -25,6 +25,10 @@ namespace DetectorWorker.Database
 
         public DbSet<Resource> Resources { get; set; }
 
+        public DbSet<ScanResult> ScanResults { get; set; }
+
+        public DbSet<ScanResultIssueRelation> ScanResultIssueRelations { get; set; }
+
         #endregion
     }
 }
