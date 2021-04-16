@@ -1,4 +1,4 @@
-using DetectorWorker.Core;
+﻿using DetectorWorker.Core;
 using DetectorWorker.Database;
 using DetectorWorker.Database.Tables;
 using DetectorWorker.Exceptions;
@@ -17,19 +17,22 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace DetectorWorker
+namespace DetectorWorker.Workers
 {
-    public class Worker : BackgroundService
+    /// <summary>
+    /// Scan all the resources regularly.
+    /// </summary>
+    public class Scanner : BackgroundService
     {
         /// <summary>
         /// Worker logger.
         /// </summary>
-        private readonly ILogger<Worker> Logger;
+        private readonly ILogger<Scanner> Logger;
 
         /// <summary>
         /// Init the worker.
         /// </summary>
-        public Worker(ILogger<Worker> logger)
+        public Scanner(ILogger<Scanner> logger)
         {
             Logger = logger;
         }
@@ -246,19 +249,6 @@ namespace DetectorWorker
                 await Log.LogCritical(ex.Message, refType: "resource", refId: resource.Id);
             }
 
-            // Update resource.
-            resource.LastScan = DateTimeOffset.Now;
-            resource.NextScan = DateTimeOffset.Now.AddSeconds(10);
-            resource.Status = "Error";
-
-            await db.SaveChangesAsync(cancellationToken);
-            
-            // Did we run into an issue?
-            if (issueType == null)
-            {
-                return;
-            }
-
             // Log locally.
             this.Logger.LogCritical($"[{resource.Identifier}] {issueMessage}");
 
@@ -358,9 +348,9 @@ namespace DetectorWorker
                     tcpClient.GetStream(),
                     false,
                     delegate (
-                        object obj,
-                        X509Certificate cert,
-                        X509Chain chain,
+                        object _,
+                        X509Certificate _,
+                        X509Chain _,
                         SslPolicyErrors errors)
                     {
                         sslPolicyErrors = errors;
@@ -435,7 +425,7 @@ namespace DetectorWorker
                 }
 
                 // Get HTTP status code.
-                var code = (int) res.StatusCode;
+                var code = (int)res.StatusCode;
                 var validStatusCodes = new[] { 200, 201, 203, 204 };
 
                 if (validStatusCodes.Contains(code))
@@ -453,7 +443,7 @@ namespace DetectorWorker
                 }
 
                 // Get HTTP status code.
-                var code = (int) res.StatusCode;
+                var code = (int)res.StatusCode;
 
                 throw new InvalidHttpStatusCodeException($"Invalid HTTP status code {code}", code);
             }

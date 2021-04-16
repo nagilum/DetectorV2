@@ -1,4 +1,5 @@
 using DetectorWorker.Core;
+using DetectorWorker.Workers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -13,9 +14,10 @@ namespace DetectorWorker
 
             // Setup host.
             Host.CreateDefaultBuilder(args)
-                .ConfigureServices((hostContext, services) =>
+                .ConfigureServices((_, services) =>
                 {
-                    services.AddHostedService<Worker>();
+                    // Scan all the resources regularly.
+                    services.AddHostedService<Scanner>();
                 })
                 .Build()
                 .Run();
