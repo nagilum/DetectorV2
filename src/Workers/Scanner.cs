@@ -34,7 +34,7 @@ namespace DetectorWorker.Workers
         /// </summary>
         public Scanner(ILogger<Scanner> logger)
         {
-            Logger = logger;
+            this.Logger = logger;
         }
 
         /// <summary>

@@ -18,6 +18,9 @@ namespace DetectorWorker
                 {
                     // Scan all the resources regularly.
                     services.AddHostedService<Scanner>();
+
+                    // Create monthly reports.
+                    services.AddHostedService<MonthlyReports>();
                 })
                 .Build()
                 .Run();
