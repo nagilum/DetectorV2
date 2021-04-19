@@ -2,6 +2,7 @@
 using DetectorWorker.Database;
 using DetectorWorker.Database.Tables;
 using DetectorWorker.Exceptions;
+using DetectorWorker.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -70,6 +71,7 @@ namespace DetectorWorker.Workers
                 // No resources are up for a new scan, wait for next round.
                 if (!ids.Any())
                 {
+                    this.Logger.LogInformation("No resources to scan. Waiting for next cycle.");
                     await Task.Delay(new TimeSpan(0, 0, 30), cancellationToken);
                     continue;
                 }
@@ -80,9 +82,8 @@ namespace DetectorWorker.Workers
                     await this.ScanResource(id, cancellationToken);
                 }
 
-                this.Logger.LogInformation("Scans complete. Waiting for next cycle..");
-
                 // All resources scanned, wait 10 sec and go at it again.
+                this.Logger.LogInformation("Scans complete. Waiting for next cycle..");
                 await Task.Delay(new TimeSpan(0, 0, 10), cancellationToken);
             }
         }
@@ -124,12 +125,10 @@ namespace DetectorWorker.Workers
                 return;
             }
 
-            // Prepare new scan result.
-            var scanResult = new ScanResult
+            // Prepare new graph point.
+            var gp = new GraphPoint
             {
-                Created = DateTimeOffset.Now,
-                ResourceId = resource.Id,
-                Url = resource.Url
+                dt = DateTimeOffset.Now
             };
 
             string issueType;
@@ -142,9 +141,9 @@ namespace DetectorWorker.Workers
             try
             {
                 // Get connecting IP.
-                scanResult.ConnectingIp = await ResolveConnectingIp(resource.Url);
+                var connectingIp = await ResolveConnectingIp(resource.Url);
 
-                if (scanResult.ConnectingIp == null)
+                if (connectingIp == null)
                 {
                     throw new UnableToResolveIpException($"Unable to resolve IP for {resource.Url}");
                 }
@@ -152,23 +151,23 @@ namespace DetectorWorker.Workers
                 // Does the resource have the connecting IP saved?
                 if (resource.ConnectingIp == null)
                 {
-                    resource.ConnectingIp = scanResult.ConnectingIp;
+                    resource.ConnectingIp = connectingIp;
                     await db.SaveChangesAsync(cancellationToken);
                 }
 
                 // Verify connecting IP.
-                if (resource.ConnectingIp != scanResult.ConnectingIp)
+                if (resource.ConnectingIp != connectingIp)
                 {
                     throw new InvalidConnectingIpException(
-                        $"Resource and scan IP mismatch. Resource says {resource.ConnectingIp}. Scan says {scanResult.ConnectingIp}",
-                        scanResult.ConnectingIp);
+                        $"Resource and scan IP mismatch. Resource says {resource.ConnectingIp}. Scan says {connectingIp}",
+                        connectingIp);
                 }
 
                 // Check SSL cert.
                 await CheckSslCert(resource.Url);
 
                 // Check HTTP status code.
-                AttemptGetRequest(resource.Url);
+                AttemptGetRequest(resource.Url, gp);
 
                 // If we arrive here, all issues must be resolved!
                 var unresolvedIssues = await db.Issues
@@ -195,6 +194,7 @@ namespace DetectorWorker.Workers
                 resource.LastScan = DateTimeOffset.Now;
                 resource.NextScan = DateTimeOffset.Now.AddSeconds(60);
                 resource.Status = "Ok";
+                resource.GraphJson = await this.CreateGraphJson(resource.Id, gp, resource.GraphJson);
 
                 await db.SaveChangesAsync(cancellationToken);
 
@@ -202,19 +202,12 @@ namespace DetectorWorker.Workers
             }
             catch (SslException ex)
             {
-                // Set result.
-                scanResult.SslErrorCode = ex.Code;
-                scanResult.SslErrorMessage = ex.Message;
-
                 // Create issue message.
                 issueType = "ssl_error";
                 issueMessage = $"SSL Error: {ex.Code} - {ex.Message}";
             }
             catch (InvalidHttpStatusCodeException ex)
             {
-                // Set result.
-                scanResult.HttpStatusCode = ex.HttpStatusCode;
-
                 // Create issue message.
                 issueType = "invalid_http_status_code";
                 issueMessage = ex.Message;
@@ -238,17 +231,6 @@ namespace DetectorWorker.Workers
                 issueMessage = ex.Message;
             }
 
-            // Save scan result.
-            try
-            {
-                await db.ScanResults.AddAsync(scanResult, cancellationToken);
-                await db.SaveChangesAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                await Log.LogCritical(ex.Message, refType: "resource", refId: resource.Id);
-            }
-
             // Log locally.
             this.Logger.LogCritical($"[{resource.Identifier}] {issueMessage}");
 
@@ -270,6 +252,17 @@ namespace DetectorWorker.Workers
                 {
                     createNewIssue = false;
                     issue.Updated = DateTimeOffset.Now;
+                    await db.SaveChangesAsync(cancellationToken);
+
+                    gp.st = issueMessage;
+                    gp.iid = issue.Id;
+
+                    // Update resource.
+                    resource.LastScan = DateTimeOffset.Now;
+                    resource.NextScan = DateTimeOffset.Now.AddSeconds(10);
+                    resource.Status = "Error";
+                    resource.GraphJson = await this.CreateGraphJson(resource.Id, gp, resource.GraphJson);
+
                     await db.SaveChangesAsync(cancellationToken);
                 }
             }
@@ -297,6 +290,17 @@ namespace DetectorWorker.Workers
                 };
 
                 await db.Issues.AddAsync(issue, cancellationToken);
+                await db.SaveChangesAsync(cancellationToken);
+
+                gp.st = issueMessage;
+                gp.iid = issue.Id;
+
+                // Update resource.
+                resource.LastScan = DateTimeOffset.Now;
+                resource.NextScan = DateTimeOffset.Now.AddSeconds(10);
+                resource.Status = "Error";
+                resource.GraphJson = await this.CreateGraphJson(resource.Id, gp, resource.GraphJson);
+
                 await db.SaveChangesAsync(cancellationToken);
 
                 // Create alert.
@@ -402,10 +406,13 @@ namespace DetectorWorker.Workers
         /// Attempt to connect to the resource URL and get a HTTP status code.
         /// </summary>
         /// <param name="url">URL to connect to.</param>
+        /// <param name="gp">GraphPoint to fill out.</param>
         /// <exception cref="WebException">Throw if the request redirects or crashes.</exception>
         /// <exception cref="Exception">Throw if there is an unknown error.</exception>
-        private void AttemptGetRequest(string url)
+        private void AttemptGetRequest(string url, GraphPoint gp)
         {
+            var start = DateTimeOffset.Now;
+
             try
             {
                 if (!(WebRequest.Create(url) is HttpWebRequest req))
@@ -424,9 +431,16 @@ namespace DetectorWorker.Workers
                     throw new Exception($"Could not get HttpWebResponse from HttpWebRequest for {url}");
                 }
 
+                // Figure out response time.
+                var end = DateTimeOffset.Now;
+                var duration = end - start;
+
+                gp.rt = duration.TotalMilliseconds;
+                gp.st = "Ok";
+
                 // Get HTTP status code.
-                var code = (int)res.StatusCode;
-                var validStatusCodes = new[] { 200, 201, 203, 204 };
+                var code = (int) res.StatusCode;
+                var validStatusCodes = new[] {200, 201, 203, 204};
 
                 if (validStatusCodes.Contains(code))
                 {
@@ -442,12 +456,22 @@ namespace DetectorWorker.Workers
                     throw new Exception($"Unable to get HttpWebResponse from WebException for {url}");
                 }
 
+                // Figure out response time.
+                var end = DateTimeOffset.Now;
+                var duration = end - start;
+
+                gp.rt = duration.TotalMilliseconds;
+
                 // Get HTTP status code.
-                var code = (int)res.StatusCode;
+                var code = (int) res.StatusCode;
 
                 throw new InvalidHttpStatusCodeException($"Invalid HTTP status code {code}", code);
             }
         }
+
+        #endregion
+
+        #region Helper functions
 
         /// <summary>
         /// Create alert object and distribute to various medias.
@@ -599,6 +623,47 @@ namespace DetectorWorker.Workers
                     ex.Message,
                     refType: "alert",
                     refId: alert.Id);
+            }
+        }
+
+        /// <summary>
+        /// Create a new JSON with all items.
+        /// </summary>
+        /// <param name="resourceId">Id of resource.</param>
+        /// <param name="gp">Graph point to add.</param>
+        /// <param name="json">Existing JSON to add it too.</param>
+        /// <returns>New JSON with GP added.</returns>
+        private async Task<string> CreateGraphJson(long resourceId, GraphPoint gp, string json)
+        {
+            try
+            {
+                json ??= "[]";
+
+                var list = JsonSerializer.Deserialize<List<GraphPoint>>(json)
+                           ?? new List<GraphPoint>();
+
+                list.Add(gp);
+
+                var dt = DateTimeOffset.Now.AddMonths(-3);
+
+                list = list
+                    .Where(n => n.dt > dt)
+                    .OrderByDescending(n => n.dt)
+                    .ToList();
+
+                json = JsonSerializer.Serialize(
+                    list,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                    });
+
+                return json;
+            }
+            catch (Exception ex)
+            {
+                await Log.LogCritical(ex.Message, refType: "resource", refId: resourceId);
+                return null;
             }
         }
 
