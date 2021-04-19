@@ -21,6 +21,9 @@ namespace DetectorWorker
 
                     // Create monthly reports.
                     services.AddHostedService<MonthlyReports>();
+
+                    // Clean old entries from the database.
+                    services.AddHostedService<CleanDb>();
                 })
                 .Build()
                 .Run();
