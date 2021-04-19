@@ -39,21 +39,25 @@ namespace DetectorWorker.Workers
 
                 var dt = DateTimeOffset.Now.AddMonths(-6);
 
+                var removedResources = 0;
                 var removedIssues = 0;
                 var removedAlerts = 0;
                 var removedLogs = 0;
 
-                // Remove resolved issues older than 6 months.
+                // Remove deleted resources older than 6 months.
                 try
                 {
-                    var issues = await db.Issues
-                        .Where(n => n.Resolved.HasValue &&
-                                    n.Resolved.Value < dt)
+                    var resources = await db.Resources
+                        .Where(n => n.Deleted.HasValue &&
+                                    n.Deleted.Value < dt)
                         .ToListAsync(cancellationToken);
 
-                    if (issues.Any())
+                    foreach (var resource in resources)
                     {
-                        // Get all alerts relevant to these issues.
+                        var issues = await db.Issues
+                            .Where(n => n.ResourceId == resource.Id)
+                            .ToListAsync(cancellationToken);
+
                         foreach (var issue in issues)
                         {
                             var alerts = await db.Alerts
@@ -69,13 +73,53 @@ namespace DetectorWorker.Workers
                             db.Alerts.RemoveRange(alerts);
                         }
 
-                        // Remove issues.
-                        removedIssues = issues.Count;
+                        removedIssues += issues.Count;
                         db.Issues.RemoveRange(issues);
-
-                        // Save.
-                        await db.SaveChangesAsync(cancellationToken);
                     }
+
+                    // Remove resources.
+                    removedResources += resources.Count;
+                    db.Resources.RemoveRange(resources);
+
+                    // Save.
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    this.Logger.LogCritical(ex, ex.Message);
+                    await Log.LogCritical(ex.Message);
+                }
+
+                // Remove resolved issues older than 6 months.
+                try
+                {
+                    var issues = await db.Issues
+                        .Where(n => n.Resolved.HasValue &&
+                                    n.Resolved.Value < dt)
+                        .ToListAsync(cancellationToken);
+
+                    // Get all alerts relevant to these issues.
+                    foreach (var issue in issues)
+                    {
+                        var alerts = await db.Alerts
+                            .Where(n => n.IssueId == issue.Id)
+                            .ToListAsync(cancellationToken);
+
+                        if (!alerts.Any())
+                        {
+                            continue;
+                        }
+
+                        removedAlerts += alerts.Count;
+                        db.Alerts.RemoveRange(alerts);
+                    }
+
+                    // Remove issues.
+                    removedIssues += issues.Count;
+                    db.Issues.RemoveRange(issues);
+
+                    // Save.
+                    await db.SaveChangesAsync(cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -90,12 +134,9 @@ namespace DetectorWorker.Workers
                         .Where(n => n.Created < dt)
                         .ToListAsync(cancellationToken);
 
-                    if (logs.Any())
-                    {
-                        removedLogs += logs.Count;
-                        db.Logs.RemoveRange(logs);
-                        await db.SaveChangesAsync(cancellationToken);
-                    }
+                    removedLogs += logs.Count;
+                    db.Logs.RemoveRange(logs);
+                    await db.SaveChangesAsync(cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -104,7 +145,7 @@ namespace DetectorWorker.Workers
                 }
 
                 // Log.
-                this.Logger.LogInformation($"Removed {removedIssues} issues, {removedAlerts} alerts, and {removedLogs} log entries from the db.");
+                this.Logger.LogInformation($"Removed {removedResources} deleted resources, {removedIssues} resolved issues, {removedAlerts} alerts, and {removedLogs} log entries from the db.");
 
                 // Wait a day.
                 await Task.Delay(new TimeSpan(24, 0, 0), cancellationToken);
