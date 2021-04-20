@@ -18,10 +18,5 @@ namespace DetectorWorker.Helpers
         /// Status.
         /// </summary>
         public string st { get; set; }
-
-        /// <summary>
-        /// IssueId.
-        /// </summary>
-        public long? iid { get; set; }
     }
 }

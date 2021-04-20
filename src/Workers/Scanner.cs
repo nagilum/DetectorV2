@@ -2,7 +2,6 @@
 using DetectorWorker.Database;
 using DetectorWorker.Database.Tables;
 using DetectorWorker.Exceptions;
-using DetectorWorker.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -77,6 +76,7 @@ namespace DetectorWorker.Workers
                 }
 
                 // Cycle and scan each resource.
+                // TODO: Convert to parallel foreach.
                 foreach (var id in ids)
                 {
                     await this.ScanResource(id, cancellationToken);
@@ -126,9 +126,10 @@ namespace DetectorWorker.Workers
             }
 
             // Prepare new graph point.
-            var gp = new GraphPoint
+            var scanResult = new ScanResult
             {
-                dt = DateTimeOffset.Now
+                Created = DateTimeOffset.Now,
+                ResourceId = resource.Id
             };
 
             string issueType;
@@ -167,7 +168,7 @@ namespace DetectorWorker.Workers
                 await CheckSslCert(resource.Url);
 
                 // Check HTTP status code.
-                AttemptGetRequest(resource.Url, gp);
+                AttemptGetRequest(resource.Url, scanResult);
 
                 // If we arrive here, all issues must be resolved!
                 var unresolvedIssues = await db.Issues
@@ -194,8 +195,11 @@ namespace DetectorWorker.Workers
                 resource.LastScan = DateTimeOffset.Now;
                 resource.NextScan = DateTimeOffset.Now.AddSeconds(60);
                 resource.Status = "Ok";
-                resource.GraphJson = await this.CreateGraphJson(resource.Id, gp, resource.GraphJson);
 
+                // Save scan result.
+                await db.ScanResults.AddAsync(scanResult, cancellationToken);
+
+                // Save to db.
                 await db.SaveChangesAsync(cancellationToken);
 
                 return;
@@ -251,17 +255,17 @@ namespace DetectorWorker.Workers
                 if (issue != null)
                 {
                     createNewIssue = false;
+
                     issue.Updated = DateTimeOffset.Now;
-                    await db.SaveChangesAsync(cancellationToken);
 
-                    gp.st = issueMessage;
-                    gp.iid = issue.Id;
+                    scanResult.Status = "Error";
+                    scanResult.ErrorMessage = issueMessage;
 
-                    // Update resource.
+                    await db.ScanResults.AddAsync(scanResult, cancellationToken);
+
                     resource.LastScan = DateTimeOffset.Now;
                     resource.NextScan = DateTimeOffset.Now.AddSeconds(10);
                     resource.Status = "Error";
-                    resource.GraphJson = await this.CreateGraphJson(resource.Id, gp, resource.GraphJson);
 
                     await db.SaveChangesAsync(cancellationToken);
                 }
@@ -292,14 +296,15 @@ namespace DetectorWorker.Workers
                 await db.Issues.AddAsync(issue, cancellationToken);
                 await db.SaveChangesAsync(cancellationToken);
 
-                gp.st = issueMessage;
-                gp.iid = issue.Id;
+                scanResult.Status = "Error";
+                scanResult.ErrorMessage = issueMessage;
+
+                await db.ScanResults.AddAsync(scanResult, cancellationToken);
 
                 // Update resource.
                 resource.LastScan = DateTimeOffset.Now;
                 resource.NextScan = DateTimeOffset.Now.AddSeconds(10);
                 resource.Status = "Error";
-                resource.GraphJson = await this.CreateGraphJson(resource.Id, gp, resource.GraphJson);
 
                 await db.SaveChangesAsync(cancellationToken);
 
@@ -406,10 +411,10 @@ namespace DetectorWorker.Workers
         /// Attempt to connect to the resource URL and get a HTTP status code.
         /// </summary>
         /// <param name="url">URL to connect to.</param>
-        /// <param name="gp">GraphPoint to fill out.</param>
+        /// <param name="scanResult">Scan result to populate.</param>
         /// <exception cref="WebException">Throw if the request redirects or crashes.</exception>
         /// <exception cref="Exception">Throw if there is an unknown error.</exception>
-        private void AttemptGetRequest(string url, GraphPoint gp)
+        private void AttemptGetRequest(string url, ScanResult scanResult)
         {
             var start = DateTimeOffset.Now;
 
@@ -435,8 +440,8 @@ namespace DetectorWorker.Workers
                 var end = DateTimeOffset.Now;
                 var duration = end - start;
 
-                gp.rt = duration.TotalMilliseconds;
-                gp.st = "Ok";
+                scanResult.ResponseTimeMs = duration.TotalMilliseconds;
+                scanResult.Status = "Ok";
 
                 // Get HTTP status code.
                 var code = (int) res.StatusCode;
@@ -460,7 +465,7 @@ namespace DetectorWorker.Workers
                 var end = DateTimeOffset.Now;
                 var duration = end - start;
 
-                gp.rt = duration.TotalMilliseconds;
+                scanResult.ResponseTimeMs = duration.TotalMilliseconds;
 
                 // Get HTTP status code.
                 var code = (int) res.StatusCode;
@@ -623,47 +628,6 @@ namespace DetectorWorker.Workers
                     ex.Message,
                     refType: "alert",
                     refId: alert.Id);
-            }
-        }
-
-        /// <summary>
-        /// Create a new JSON with all items.
-        /// </summary>
-        /// <param name="resourceId">Id of resource.</param>
-        /// <param name="gp">Graph point to add.</param>
-        /// <param name="json">Existing JSON to add it too.</param>
-        /// <returns>New JSON with GP added.</returns>
-        private async Task<string> CreateGraphJson(long resourceId, GraphPoint gp, string json)
-        {
-            try
-            {
-                json ??= "[]";
-
-                var list = JsonSerializer.Deserialize<List<GraphPoint>>(json)
-                           ?? new List<GraphPoint>();
-
-                list.Add(gp);
-
-                var dt = DateTimeOffset.Now.AddMonths(-3);
-
-                list = list
-                    .Where(n => n.dt > dt)
-                    .OrderByDescending(n => n.dt)
-                    .ToList();
-
-                json = JsonSerializer.Serialize(
-                    list,
-                    new JsonSerializerOptions
-                    {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                    });
-
-                return json;
-            }
-            catch (Exception ex)
-            {
-                await Log.LogCritical(ex.Message, refType: "resource", refId: resourceId);
-                return null;
             }
         }
 

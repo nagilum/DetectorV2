@@ -24,6 +24,9 @@ namespace DetectorWorker
 
                     // Clean old entries from the database.
                     services.AddHostedService<CleanDb>();
+
+                    // Cycle scan results and build resource graphs.
+                    services.AddHostedService<BuildGraphs>();
                 })
                 .Build()
                 .Run();

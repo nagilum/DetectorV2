@@ -48,9 +48,6 @@ namespace DetectorWorker.Database.Tables
         [MaxLength(128)]
         public string ConnectingIp { get; set; }
 
-        [Column]
-        public string GraphJson { get; set; }
-
         #endregion
 
         #region Overrides

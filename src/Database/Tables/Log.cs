@@ -97,6 +97,34 @@ namespace DetectorWorker.Database.Tables
         }
 
         /// <summary>
+        /// Save critical message to logs.
+        /// </summary>
+        /// <param name="exception">Exception to log.</param>
+        /// <param name="userId">User who made the log.</param>
+        /// <param name="refType">Reference to another type.</param>
+        /// <param name="refId">Reference id to alt object.</param>
+        public static async Task LogCritical(
+            Exception exception,
+            long? userId = null,
+            string refType = null,
+            long? refId = null)
+        {
+            var ex = exception;
+
+            while (true)
+            {
+                if (ex == null)
+                {
+                    break;
+                }
+
+                await LogToDb(ex.Message, "critical", userId, refType, refId);
+
+                ex = ex.InnerException;
+            }
+        }
+
+        /// <summary>
         /// Save info message to logs.
         /// </summary>
         /// <param name="message">Log message.</param>
