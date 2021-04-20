@@ -25,6 +25,8 @@ namespace DetectorWorker.Database
 
         public DbSet<Log> Logs { get; set; }
 
+        public DbSet<MonthlyReport> MonthlyReports { get; set; }
+
         public DbSet<Resource> Resources { get; set; }
 
         public DbSet<ScanResult> ScanResults { get; set; }
