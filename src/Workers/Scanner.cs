@@ -54,6 +54,8 @@ namespace DetectorWorker.Workers
                         .Where(n => !n.Deleted.HasValue)
                         .Where(n => n.NextScan == null ||
                                     n.NextScan <= DateTimeOffset.Now)
+                        .Where(n => n.Active == null ||
+                                    n.Active.Value)
                         .Select(n => n.Id)
                         .ToListAsync(cancellationToken);
                 }
