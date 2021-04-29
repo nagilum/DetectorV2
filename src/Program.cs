@@ -20,7 +20,7 @@ namespace DetectorWorker
                     services.AddHostedService<Scanner>();
 
                     // Create monthly reports.
-                    services.AddHostedService<MonthlyReports>();
+                    //services.AddHostedService<MonthlyReports>();
 
                     // Clean old entries from the database.
                     services.AddHostedService<CleanDb>();

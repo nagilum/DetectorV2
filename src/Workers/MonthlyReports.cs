@@ -13,6 +13,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore.Query.Internal;
 
 namespace DetectorWorker.Workers
 {
@@ -43,18 +44,39 @@ namespace DetectorWorker.Workers
             {
                 try
                 {
-                    var dt = DateTimeOffset.Now;
+                    var dt = DateTimeOffset.Now.AddMonths(-1);
+                    var dict = new Dictionary<int, List<int>>();
 
-                    var report = await new DatabaseContext()
-                        .MonthlyReports
-                        .FirstOrDefaultAsync(n => n.Year == dt.Year &&
-                                                  n.Month == dt.Month,
-                            cancellationToken);
-
-                    if (report == null)
+                    for (var i = 0; i < 3; i++)
                     {
-                        // Generate a report.
-                        await this.GenerateReport(dt.Year, dt.Month, cancellationToken);
+                        if (!dict.ContainsKey(dt.Year))
+                        {
+                            dict.Add(dt.Year, new List<int>());
+                        }
+
+                        if (!dict[dt.Year].Contains(dt.Month))
+                        {
+                            dict[dt.Year].Add(dt.Month);
+                        }
+
+                        dt = dt.AddMonths(-1);
+                    }
+
+                    foreach (var (year, months) in dict)
+                    {
+                        foreach (var month in months)
+                        {
+                            var report = await new DatabaseContext()
+                                .MonthlyReports
+                                .FirstOrDefaultAsync(n => n.Year == dt.Year &&
+                                                          n.Month == dt.Month,
+                                    cancellationToken);
+
+                            if (report == null)
+                            {
+                                await this.GenerateReportAsync(year, month, cancellationToken);
+                            }
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -76,7 +98,7 @@ namespace DetectorWorker.Workers
         /// <param name="year">Year of report.</param>
         /// <param name="month">Month of report.</param>
         /// <param name="cancellationToken">Passed cancellation token.</param>
-        private async Task GenerateReport(int year, int month, CancellationToken cancellationToken)
+        private async Task GenerateReportAsync(int year, int month, CancellationToken cancellationToken)
         {
             await using var db = new DatabaseContext();
 
@@ -313,7 +335,7 @@ namespace DetectorWorker.Workers
                 await db.MonthlyReports.AddAsync(report, cancellationToken);
                 await db.SaveChangesAsync(cancellationToken);
 
-                // TEMP: Save to disk.
+                // TODO: TEMP: Save to disk.
                 var path = Path.Combine(
                     Directory.GetCurrentDirectory(),
                     $"detector-monthly-report-{year}-{month}.html");
