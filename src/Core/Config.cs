@@ -54,11 +54,41 @@ namespace DetectorWorker.Core
         #region Getters
 
         /// <summary>
-        /// Get value from config.
+        /// Get value from environment or config.
         /// </summary>
         /// <param name="keys">Key, with depths, to fetch for.</param>
-        /// <returns>Value.</returns>
+        /// <returns>Value, if found.</returns>
         public static string Get(params string[] keys)
+        {
+            return GetEnv(keys) ??
+                   GetStorage(keys);
+        }
+
+        /// <summary>
+        /// Get value purely from environment variables.
+        /// </summary>
+        /// <param name="keys">Key, with depths, to fetch for.</param>
+        /// <returns>Value, if found.</returns>
+        public static string GetEnv(params string[] keys)
+        {
+            if (keys.Length == 0)
+            {
+                return null;
+            }
+
+            var appName = GetStorage("app", "name");
+            var envKey = $"{appName}_{string.Join("_", keys)}".ToUpper();
+            var envValue = Environment.GetEnvironmentVariable(envKey);
+
+            return envValue;
+        }
+
+        /// <summary>
+        /// Get calue from storage.
+        /// </summary>
+        /// <param name="keys">Key, with depths, to fetch for.</param>
+        /// <returns>Value, if found.</returns>
+        public static string GetStorage(params string[] keys)
         {
             if (keys.Length == 0)
             {
@@ -89,16 +119,7 @@ namespace DetectorWorker.Core
 
                 if (i == keys.Length - 1)
                 {
-                    Cache ??= new Dictionary<string, object>();
-
-                    if (Cache.ContainsKey(cacheKey))
-                    {
-                        Cache[cacheKey] = dict[keys[i]];
-                    }
-                    else
-                    {
-                        Cache.Add(cacheKey, dict[keys[i]]);
-                    }
+                    Set(cacheKey, dict[keys[i]]);
 
                     return dict[keys[i]].ToString();
                 }
@@ -121,6 +142,29 @@ namespace DetectorWorker.Core
             }
 
             return null;
+        }
+
+        #endregion
+
+        #region Setters
+
+        /// <summary>
+        /// Add value to cache for quick fetch.
+        /// </summary>
+        /// <param name="key">Key to store under.</param>
+        /// <param name="value">Value to set.</param>
+        public static void Set(string key, object value)
+        {
+            Cache ??= new Dictionary<string, object>();
+
+            if (Cache.ContainsKey(key))
+            {
+                Cache[key] = value;
+            }
+            else
+            {
+                Cache.Add(key, value);
+            }
         }
 
         #endregion

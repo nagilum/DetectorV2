@@ -6,13 +6,21 @@ namespace DetectorWorker.Database
 {
     public class DatabaseContext : DbContext
     {
-        protected override void OnConfiguring(DbContextOptionsBuilder ob)
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            ob.UseSqlServer(
-                $"Data Source={Config.Get("database", "hostname")};" +
-                $"Initial Catalog={Config.Get("database", "database")};" +
-                $"User ID={Config.Get("database", "username")};" +
-                $"Password={Config.Get("database", "password")};");
+            var connectionString = Config.Get("_cache_connectionString");
+
+            if (connectionString == null)
+            {
+                connectionString = $"Data Source={Config.Get("database", "hostname")};" +
+                                   $"Initial Catalog={Config.Get("database", "database")};" +
+                                   $"User ID={Config.Get("database", "username")};" +
+                                   $"Password={Config.Get("database", "password")};";
+
+                Config.Set("_cache_connectionString", connectionString);
+            }
+
+            optionsBuilder.UseSqlServer(connectionString);
         }
 
         #region DbSets
