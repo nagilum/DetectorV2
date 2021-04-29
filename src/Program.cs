@@ -14,6 +14,8 @@ namespace DetectorWorker
 
             // Setup host.
             Host.CreateDefaultBuilder(args)
+                .UseWindowsService()
+                .UseSystemd()
                 .ConfigureServices((_, services) =>
                 {
                     // Scan all the resources regularly.
