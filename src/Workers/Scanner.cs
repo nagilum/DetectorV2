@@ -78,11 +78,10 @@ namespace DetectorWorker.Workers
                 }
 
                 // Cycle and scan each resource.
-                // TODO: Convert to parallel foreach.
-                foreach (var id in ids)
+                Parallel.ForEach(ids, async id =>
                 {
                     await this.ScanResource(id, cancellationToken);
-                }
+                });
 
                 // All resources scanned, wait 10 sec and go at it again.
                 this.Logger.LogInformation("Scans complete. Waiting for next cycle..");

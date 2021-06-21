@@ -59,11 +59,10 @@ namespace DetectorWorker.Workers
                 }
 
                 // Cycle each resource and build the graph.
-                // TODO: Convert to parallel foreach.
-                foreach (var id in rids)
+                Parallel.ForEach(rids, async id =>
                 {
                     await this.BuildGraph(id, cancellationToken);
-                }
+                });
 
                 // Wait a day.
                 await Task.Delay(new TimeSpan(0, 5, 0), cancellationToken);
