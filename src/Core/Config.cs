@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 
 namespace DetectorWorker.Core
@@ -8,14 +9,6 @@ namespace DetectorWorker.Core
     public class Config
     {
         #region Local storage
-
-        /// <summary>
-        /// Full path where config is located.
-        /// </summary>
-        private static string StoragePath =>
-            Path.Combine(
-                Directory.GetCurrentDirectory(),
-                "config.json");
 
         /// <summary>
         /// Cache for faster lookups.
@@ -36,13 +29,42 @@ namespace DetectorWorker.Core
         /// </summary>
         public static void Load()
         {
-            if (!File.Exists(StoragePath))
+            var paths = new List<string> {
+                Directory.GetCurrentDirectory(),
+                AppContext.BaseDirectory
+            };
+
+            var entryAssembly = Assembly.GetEntryAssembly();
+
+            if (entryAssembly != null)
             {
-                throw new FileNotFoundException($"Unable to find config file: {StoragePath}");
+                paths.Add(Path.GetDirectoryName(entryAssembly.Location));
+            }
+
+            string path = null;
+
+            foreach (var temp in paths)
+            {
+                path = Path.Combine(
+                    temp,
+                    "config.json");
+
+                if (File.Exists(path))
+                {
+                    break;
+                }
+
+                path = null;
+            }
+
+            if (path == null)
+            {
+                throw new FileNotFoundException(
+                    $"Cannot find config.json in any of the directories: {string.Join(", ", paths)}");
             }
 
             Storage = JsonSerializer.Deserialize<Dictionary<string, object>>(
-                File.ReadAllText(StoragePath),
+                File.ReadAllText(path),
                 new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
