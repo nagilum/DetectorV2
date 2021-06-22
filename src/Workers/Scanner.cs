@@ -210,30 +210,45 @@ namespace DetectorWorker.Workers
                 // Create issue message.
                 issueType = "ssl_error";
                 issueMessage = $"SSL Error: {ex.Code} - {ex.Message}";
+
+                // Log to db.
+                await Log.LogCritical(ex, refType: "resource", refId: resource.Id);
             }
             catch (InvalidHttpStatusCodeException ex)
             {
                 // Create issue message.
                 issueType = "invalid_http_status_code";
                 issueMessage = ex.Message;
+
+                // Log to db.
+                await Log.LogCritical(ex, refType: "resource", refId: resource.Id);
             }
             catch (InvalidConnectingIpException ex)
             {
                 // Create issue message.
                 issueType = "invalid_connecting_ip";
                 issueMessage = ex.Message;
+
+                // Log to db.
+                await Log.LogCritical(ex, refType: "resource", refId: resource.Id);
             }
             catch (UnableToResolveIpException ex)
             {
                 // Create issue message.
                 issueType = "unable_to_resolve_ip";
                 issueMessage = ex.Message;
+
+                // Log to db.
+                await Log.LogCritical(ex, refType: "resource", refId: resource.Id);
             }
             catch (Exception ex)
             {
                 // Create issue message.
                 issueType = "unhandled_exception";
                 issueMessage = ex.Message;
+
+                // Log to db.
+                await Log.LogCritical(ex, refType: "resource", refId: resource.Id);
             }
 
             // Log locally.
@@ -459,7 +474,7 @@ namespace DetectorWorker.Workers
             {
                 if (!(ex.Response is HttpWebResponse res))
                 {
-                    throw new Exception($"Unable to get HttpWebResponse from WebException for {url}");
+                    throw;
                 }
 
                 // Figure out response time.
