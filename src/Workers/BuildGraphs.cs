@@ -90,8 +90,12 @@ namespace DetectorWorker.Workers
                     throw new Exception($"Resource not found: {resourceId}");
                 }
 
+                var threshold = DateTimeOffset.Now.AddHours(-6);
+
                 var scanResults = await db.ScanResults
-                    .Where(n => n.ResourceId == resourceId)
+                    .Where(n => n.ResourceId == resourceId &&
+                                n.Created > threshold)
+                    .OrderByDescending(n => n.Created)
                     .ToListAsync(cancellationToken);
 
                 if (scanResults.Count == 0)
@@ -130,13 +134,6 @@ namespace DetectorWorker.Workers
                     list.Add(graphPoint);
                 }
 
-                var threshold = DateTimeOffset.Now.AddDays(-2);
-
-                list = list
-                    .Where(n => n.dt > threshold)
-                    .OrderByDescending(n => n.dt)
-                    .ToList();
-
                 graphData.GraphJson = JsonSerializer.Serialize(list);
                 graphData.Updated = DateTimeOffset.Now;
 
@@ -144,10 +141,6 @@ namespace DetectorWorker.Workers
                 {
                     await db.GraphData.AddAsync(graphData, cancellationToken);
                 }
-
-                await db.SaveChangesAsync(cancellationToken);
-
-                db.ScanResults.RemoveRange(scanResults);
 
                 await db.SaveChangesAsync(cancellationToken);
             }
