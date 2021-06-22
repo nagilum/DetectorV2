@@ -170,7 +170,23 @@ namespace DetectorWorker.Workers
                 }
 
                 // Log.
-                this.Logger.LogInformation($"Removed {removedResources} deleted resources, {removedIssues} resolved issues, {removedAlerts} alerts, {removedScanResults} scan results, and {removedLogs} log entries from the db.");
+                if (removedResources > 0 ||
+                    removedIssues > 0 ||
+                    removedAlerts > 0 ||
+                    removedLogs > 0 ||
+                    removedScanResults > 0)
+                {
+                    var msg =
+                        $"Removed {removedResources} deleted resources, " +
+                        $"{removedIssues} resolved issues, " +
+                        $"{removedAlerts} alerts, " +
+                        $"{removedScanResults} scan results, and " +
+                        $"{removedLogs} log entries from the db.";
+
+                    this.Logger.LogInformation(msg);
+
+                    await Log.LogInformation(msg);
+                }
 
                 // Wait a day.
                 await Task.Delay(new TimeSpan(24, 0, 0), cancellationToken);
