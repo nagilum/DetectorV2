@@ -76,6 +76,13 @@ namespace DetectorWorker.Workers
 
                         removedIssues += issues.Count;
                         db.Issues.RemoveRange(issues);
+
+                        var scanResults = await db.ScanResults
+                            .Where(n => n.ResourceId == resource.Id)
+                            .ToListAsync(cancellationToken);
+
+                        removedScanResults += scanResults.Count;
+                        db.ScanResults.RemoveRange(scanResults);
                     }
 
                     // Remove resources.
