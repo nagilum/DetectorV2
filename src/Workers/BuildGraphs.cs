@@ -90,13 +90,22 @@ namespace DetectorWorker.Workers
                     throw new Exception($"Resource not found: {resourceId}");
                 }
 
-                var threshold = DateTimeOffset.Now.AddHours(-6);
+                var threshold = DateTimeOffset.Now.AddHours(-2);
 
                 var scanResults = await db.ScanResults
                     .Where(n => n.ResourceId == resourceId &&
                                 n.Created > threshold)
                     .OrderByDescending(n => n.Created)
                     .ToListAsync(cancellationToken);
+
+                if (scanResults.Count < 120)
+                {
+                    scanResults = await db.ScanResults
+                        .Where(n => n.ResourceId == resourceId)
+                        .OrderByDescending(n => n.Created)
+                        .Take(120)
+                        .ToListAsync(cancellationToken);
+                }
 
                 if (scanResults.Count == 0)
                 {
@@ -113,9 +122,7 @@ namespace DetectorWorker.Workers
                                     ResourceId = resourceId
                                 };
 
-                var json = graphData.GraphJson ?? "[]";
-                var list = JsonSerializer.Deserialize<List<GraphPoint>>(json)
-                           ?? new List<GraphPoint>();
+                var list = new List<GraphPoint>();
 
                 foreach (var scanResult in scanResults)
                 {
@@ -134,7 +141,14 @@ namespace DetectorWorker.Workers
                     list.Add(graphPoint);
                 }
 
-                graphData.GraphJson = JsonSerializer.Serialize(list);
+                var json = JsonSerializer.Serialize(list);
+
+                if (json == graphData.GraphJson)
+                {
+                    return;
+                }
+
+                graphData.GraphJson = json;
                 graphData.Updated = DateTimeOffset.Now;
 
                 if (graphData.Id == 0)
@@ -143,6 +157,11 @@ namespace DetectorWorker.Workers
                 }
 
                 await db.SaveChangesAsync(cancellationToken);
+
+                await Log.LogInformation(
+                    "Updating graph data.",
+                    refType: "resource",
+                    refId: resourceId);
             }
             catch (Exception ex)
             {
