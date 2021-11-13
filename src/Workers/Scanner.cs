@@ -605,7 +605,8 @@ namespace DetectorWorker.Workers
 
                 var text =
                     $"{alert.Url}{Environment.NewLine}" +
-                    $"{fixedStr}{alert.Message}{Environment.NewLine}";
+                    $"{fixedStr}{alert.Message}{Environment.NewLine}" +
+                    $"--LINK-TO-REPORT--";
 
                 var obj = new
                 {
